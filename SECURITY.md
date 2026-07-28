@@ -55,9 +55,11 @@ What this means concretely:
 **Operator rule: start the tunnel when you begin a demo or test run, stop it when
 you finish.** Do not leave it running unattended overnight.
 
-If you would rather not expose anything at all, the local-mode stack
-(`scripts/dev-local.sh`) runs the whole system against a local chain with no
-tunnel. You lose the real-Coston2 deployment, not the functionality.
+If you would rather not expose anything at all, everything except the enclave
+round trip can be exercised with no tunnel: `cd contracts && forge test` covers
+the full contract lifecycle against mocked enclave results, and
+`cd extension/go && go test ./...` covers the policy engine and the XRPL signer.
+Only the live FCC path needs the proxy to be reachable.
 
 ### 1.3 Every other service is bound to loopback only
 
@@ -75,9 +77,14 @@ All local infrastructure is published to `127.0.0.1` explicitly, never to
 | Types server | `127.0.0.1:8100` | decoding for the UI |
 | Frontend dev server | `127.0.0.1:3000` | UI |
 
-`scripts/check-bindings.sh` greps the compose files for `0.0.0.0` and any
-unqualified port mapping, and fails if it finds one. It runs as part of
-`scripts/preflight.sh`.
+`scripts/check-bindings.sh` resolves `${VAR:-default}` in every compose file and
+fails if any published port would land on anything but loopback. It runs as part
+of `scripts/preflight.sh` and as a pre-push hook.
+
+This check earned its keep immediately: Flare's upstream `fce-sign` compose
+defaults the proxy ports to `0.0.0.0`, which publishes them to the whole local
+network. BridgeSafe binds them to `127.0.0.1` and reaches them through the
+tunnel instead.
 
 ### 1.4 Key handling
 
@@ -112,14 +119,17 @@ Rules the repo enforces:
 
 Be aware of what executes on your machine:
 
-- **Flare container images** (`ext-proxy`, TEE node) pulled from Flare's registry.
-  These are operated by the Flare Foundation, and the FCC stack cannot run
-  without them. They are pinned by digest in `infra/versions.env` so an image
-  cannot silently change under you; `scripts/verify-images.sh` re-checks the
-  digests before starting.
+- **Flare's container images** (`ext-proxy`, TEE node) come from the Flare
+  Foundation's registry via `extension/docker-compose.yaml`. The FCC stack cannot
+  run without them, and BridgeSafe does not control their contents. They are
+  referenced by tag, as Flare publishes them — if you want stronger guarantees,
+  resolve them to digests before a long-lived deployment.
 - **The extension image is built locally from this repo's source** — it is not
-  pulled. That is also what makes the code hash reproducible.
-- **Go/npm dependencies** are pinned via `go.sum` and lockfiles.
+  pulled. That is also what makes its code hash reproducible.
+- **The C-chain indexer is built from Flare's published source**, pinned by
+  `INDEXER_REF` in `infra/versions.env`. It currently tracks `main`; pin it to a
+  commit before relying on it.
+- **Go and npm dependencies** are pinned by `go.sum` and `package-lock.json`.
 
 Everything runs in Docker containers with no bind-mounts into your home
 directory — only into this project folder.
