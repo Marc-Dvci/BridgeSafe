@@ -14,11 +14,13 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 )
 
-// controllerABI covers only what the relayer uses on BridgeSafeController.
+// controllerABI covers only what the relayer services use on BridgeSafeController.
 //
-// Note what is absent: nothing here can create a treasury, open a request,
-// authorize a payment or change a policy. The relayer physically cannot do those
-// things, whatever its key is.
+// Note what is absent: nothing here can create a treasury, open a request, or
+// choose a policy. The result-submitting methods below look powerful but are not —
+// each one verifies an enclave signature over its payload before it changes
+// anything, so a caller can only deliver a decision the enclave already made. The
+// services carry results; they do not author them.
 const controllerABI = `[
   {"type":"function","name":"reportBroadcast","stateMutability":"nonpayable",
    "inputs":[{"name":"_requestId","type":"uint256"},{"name":"_xrplTxId","type":"bytes32"}],
@@ -53,7 +55,74 @@ const controllerABI = `[
    "inputs":[
      {"name":"requestId","type":"uint256","indexed":true},
      {"name":"xrplTxId","type":"bytes32","indexed":false},
-     {"name":"amountDrops","type":"uint256","indexed":false}]}
+     {"name":"amountDrops","type":"uint256","indexed":false}]},
+
+  {"type":"event","name":"TreasuryCreated","anonymous":false,
+   "inputs":[
+     {"name":"treasuryId","type":"uint256","indexed":true},
+     {"name":"owner","type":"address","indexed":true},
+     {"name":"policyCommitment","type":"bytes32","indexed":false},
+     {"name":"instructionId","type":"bytes32","indexed":false}]},
+  {"type":"event","name":"PolicyUpdateRequested","anonymous":false,
+   "inputs":[
+     {"name":"treasuryId","type":"uint256","indexed":true},
+     {"name":"policyCommitment","type":"bytes32","indexed":false},
+     {"name":"instructionId","type":"bytes32","indexed":false}]},
+  {"type":"event","name":"PaymentRequested","anonymous":false,
+   "inputs":[
+     {"name":"requestId","type":"uint256","indexed":true},
+     {"name":"treasuryId","type":"uint256","indexed":true},
+     {"name":"requester","type":"address","indexed":true},
+     {"name":"nonce","type":"uint64","indexed":false},
+     {"name":"memoRef","type":"bytes32","indexed":false},
+     {"name":"expiresAt","type":"uint64","indexed":false},
+     {"name":"payloadHash","type":"bytes32","indexed":false},
+     {"name":"instructionId","type":"bytes32","indexed":false}]},
+  {"type":"event","name":"SignatureRequested","anonymous":false,
+   "inputs":[
+     {"name":"requestId","type":"uint256","indexed":true},
+     {"name":"instructionId","type":"bytes32","indexed":false}]},
+
+  {"type":"function","name":"bindTreasuryAddress","stateMutability":"nonpayable",
+   "inputs":[
+     {"name":"_resultData","type":"bytes"},
+     {"name":"_actionId","type":"bytes32"},
+     {"name":"_submissionTag","type":"string"},
+     {"name":"_status","type":"uint8"},
+     {"name":"_signature","type":"bytes"}],
+   "outputs":[]},
+  {"type":"function","name":"confirmPolicy","stateMutability":"nonpayable",
+   "inputs":[
+     {"name":"_resultData","type":"bytes"},
+     {"name":"_actionId","type":"bytes32"},
+     {"name":"_submissionTag","type":"string"},
+     {"name":"_status","type":"uint8"},
+     {"name":"_signature","type":"bytes"}],
+   "outputs":[]},
+  {"type":"function","name":"submitAuthorization","stateMutability":"nonpayable",
+   "inputs":[
+     {"name":"_resultData","type":"bytes"},
+     {"name":"_actionId","type":"bytes32"},
+     {"name":"_submissionTag","type":"string"},
+     {"name":"_status","type":"uint8"},
+     {"name":"_signature","type":"bytes"}],
+   "outputs":[]},
+  {"type":"function","name":"submitSignedPayment","stateMutability":"nonpayable",
+   "inputs":[
+     {"name":"_resultData","type":"bytes"},
+     {"name":"_actionId","type":"bytes32"},
+     {"name":"_submissionTag","type":"string"},
+     {"name":"_status","type":"uint8"},
+     {"name":"_signature","type":"bytes"}],
+   "outputs":[]},
+  {"type":"function","name":"submitFailure","stateMutability":"nonpayable",
+   "inputs":[
+     {"name":"_resultData","type":"bytes"},
+     {"name":"_actionId","type":"bytes32"},
+     {"name":"_submissionTag","type":"string"},
+     {"name":"_status","type":"uint8"},
+     {"name":"_signature","type":"bytes"}],
+   "outputs":[]}
 ]`
 
 // verifierABI covers only finalizePayment on BridgeSafeFdcVerifier.

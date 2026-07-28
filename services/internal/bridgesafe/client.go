@@ -163,6 +163,21 @@ func (c *Chain) FilterLogs(ctx context.Context, address common.Address, topic co
 	})
 }
 
+// FilterLogsAny fetches historical logs matching any of several event topics.
+//
+// Used by result-relay, which watches four different instruction-dispatching
+// events and needs them in one chronologically ordered pass — fetching each
+// separately would interleave them wrongly and could apply a signature result
+// before the authorization it depends on.
+func (c *Chain) FilterLogsAny(ctx context.Context, address common.Address, topics []common.Hash, from, to *big.Int) ([]types.Log, error) {
+	return c.client.FilterLogs(ctx, ethereum.FilterQuery{
+		FromBlock: from,
+		ToBlock:   to,
+		Addresses: []common.Address{address},
+		Topics:    [][]common.Hash{topics},
+	})
+}
+
 // BlockNumber returns the current head.
 func (c *Chain) BlockNumber(ctx context.Context) (uint64, error) {
 	return c.client.BlockNumber(ctx)
