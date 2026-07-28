@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# Secrets. Nothing matching these patterns may ever reach the public repo.
+# `scripts/check-secrets.sh` re-checks the staged diff before every push.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.p12
+*.keystore
+secrets/
+config/extension.env
+config/proxy/*.toml
+!config/proxy/*.toml.example
+.wallets/
+xrpl-treasury-*.json
+
+# Build output
+out/
+cache/
+cache_forge/
+broadcast/
+artifacts/
+bin/
+dist/
+*.exe
+
+# Foundry deps (vendored via submodule/forge install)
+contracts/lib/
+
+# Go
+extension/vendor/
+services/**/vendor/
+
+# Node
+node_modules/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Local infra state
+infra/indexer/data/
+infra/**/data/
+*.sqlite
+*.db
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs and scratch
+*.log
+logs/
+tmp/
+.scratch/

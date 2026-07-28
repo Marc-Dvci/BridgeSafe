@@ -1,0 +1,3 @@
+forge-std/=dependencies/forge-std-1.9.5/src/
+flare-periphery/=dependencies/flare-periphery-0.1.52/
+@flarenetwork/flare-periphery-contracts/=dependencies/flare-periphery-0.1.52/src/

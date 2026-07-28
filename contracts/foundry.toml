@@ -1,0 +1,41 @@
+[profile.default]
+solc = "0.8.27"
+evm_version = "cancun"
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["dependencies"]
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+fs_permissions = [{ access = "read-write", path = "./" }]
+
+[profile.default.fuzz]
+runs = 512
+
+[lint]
+# Request deadlines are inherently wall-clock. Flare produces ~1.8s blocks and
+# BridgeSafe windows are measured in minutes to hours, so the drift a validator
+# could induce is orders of magnitude too small to matter. Expiry is also a
+# liveness control, never the authorization: nothing settles without an FDC proof.
+exclude_lints = ["block-timestamp"]
+
+[dependencies]
+forge-std = "1.9.5"
+flare-periphery = "0.1.52"
+
+[soldeer]
+remappings_generate = false
+remappings_regenerate = false
+remappings_version = false
+remappings_location = "txt"
+recursive_deps = true
+
+[rpc_endpoints]
+coston2 = "${CHAIN_URL}"
+
+# Blockscout verification needs no API key:
+#   --verifier blockscout --verifier-url https://coston2-explorer.flare.network/api/
+[etherscan]
+coston2 = { key = "unused", url = "https://coston2-explorer.flare.network/api/", chain = 114 }
