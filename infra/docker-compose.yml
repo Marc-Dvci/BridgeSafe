@@ -1,0 +1,62 @@
+# Local C-chain indexer for the BridgeSafe FCC stack.
+#
+# Every published port is bound to 127.0.0.1 explicitly. Docker publishes to
+# 0.0.0.0 when the host address is omitted, which on Windows and macOS also
+# traverses the host firewall — scripts/check-bindings.sh fails the build if any
+# mapping here loses its loopback prefix. See SECURITY.md section 1.3.
+
+name: bridgesafe-infra
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: bridgesafe-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # The indexer writes wide rows for log topics; the default packet size
+      # truncates them mid-sync with a misleading error.
+      - --max_allowed_packet=64M
+    environment:
+      MYSQL_ROOT_PASSWORD: ${INDEXER_DB_ROOT_PASSWORD:-bridgesafe-local-root}
+      MYSQL_DATABASE: ${INDEXER_DB_NAME:-flare_ftso_indexer}
+      MYSQL_USER: ${INDEXER_DB_USER:-indexer}
+      MYSQL_PASSWORD: ${INDEXER_DB_PASSWORD:-indexer}
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - indexer-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  indexer:
+    # Built from Flare's published source. Pinned by commit in infra/versions.env
+    # so the image cannot change under us between runs.
+    build:
+      context: https://github.com/flare-foundation/flare-system-c-chain-indexer.git#${INDEXER_REF:-main}
+    container_name: bridgesafe-indexer
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./indexer/config.toml:/app/config.toml:ro
+    environment:
+      NODE_URL: ${CHAIN_URL:-https://coston2-api.flare.network/ext/C/rpc}
+    ports:
+      # Health only. Returns 503 until the initial catch-up finishes.
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 120s
+
+volumes:
+  indexer-data:

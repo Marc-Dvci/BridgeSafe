@@ -21,6 +21,11 @@ services:
     tmpfs:
       - /data
 
+  # BridgeSafe change from the upstream fce-sign compose: the proxy ports default
+  # to 127.0.0.1 rather than 0.0.0.0. Upstream's default publishes the proxy to
+  # every interface, which on a laptop means the whole local network. The public
+  # path this stack actually needs is the cloudflared tunnel in scripts/tunnel.sh,
+  # and that reaches loopback perfectly well. See SECURITY.md section 1.3.
   ext-proxy:
     image: ${REGISTRY:-local}/tee-proxy
     volumes:
@@ -30,8 +35,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${EXT_PROXY_INTERNAL_BIND:-0.0.0.0:6673}:6663"
-      - "${EXT_PROXY_EXTERNAL_BIND:-0.0.0.0:6674}:6664"
+      - "${EXT_PROXY_INTERNAL_BIND:-127.0.0.1:6673}:6663"
+      - "${EXT_PROXY_EXTERNAL_BIND:-127.0.0.1:6674}:6664"
     depends_on:
       - redis
 

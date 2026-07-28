@@ -1,0 +1,50 @@
+# C-chain indexer for the BridgeSafe FCC stack, running against public Coston2.
+#
+# Why this file exists: Flare's ext-proxy needs a C-chain indexer database to
+# read signing policies from, and Flare hands out credentials to its own indexer
+# only on request. Rather than block on that, BridgeSafe runs its own indexer
+# against the public Coston2 RPC. The proxy cannot tell the difference, and the
+# stack has one less human dependency.
+#
+# FSP mode indexes only what the Flare Systems Protocol needs (signing policies,
+# voter registrations, reward offers) plus the last ~15 minutes of blocks, which
+# is why startup takes minutes rather than hours.
+
+[indexer]
+mode = "fsp"
+# 0 keeps only the recent window needed for current voting rounds. FSP metadata
+# is backfilled from two reward epochs back regardless.
+history_epochs = 0
+# Public endpoints cap eth_getLogs ranges. 1000 is safe on Coston2's public RPC;
+# raise it only against your own node.
+log_range = 1000
+# Conservative against a shared endpoint — too high earns 429s and stalls sync.
+rpc_concurrency = 20
+batch_size = 500
+new_block_check_millis = 1000
+confirmations = 1
+no_new_blocks_delay_warning = 120
+
+[logger]
+level = "INFO"
+console = true
+
+[chain]
+node_url = "https://coston2-api.flare.network/ext/C/rpc"
+api_key = ""
+chain_type = 1 # Avalanche-based
+
+[db]
+host = "mysql"
+port = 3306
+database = "flare_ftso_indexer"
+username = "indexer"
+password = "indexer"
+log_queries = false
+drop_table_at_start = false
+
+[timeout]
+backoff_max_elapsed_time_seconds = 300
+# Public RPCs are slower than a dedicated node; a tight timeout here shows up as
+# spurious sync failures rather than as an obvious misconfiguration.
+rpc_timeout_millis = 20000
