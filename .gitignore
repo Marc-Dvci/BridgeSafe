@@ -62,3 +62,8 @@ tmp/
 # Next.js
 apps/web/.next/
 apps/web/next-env.d.ts
+
+# Submission material — kept locally, not published.
+demo-video/
+docs/demo-script.md
+docs/submission.md

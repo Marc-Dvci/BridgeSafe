@@ -141,8 +141,7 @@ services/      result-relay/              carries signed enclave results on chai
                fdc-worker/                drives the FDC attestation round trip
 infra/         self-hosted C-chain indexer, so the stack needs nothing from Flare support
 apps/web/      console with the execution trace
-docs/          architecture, threat model, demo script, vision, submission notes
-demo-video/    Remotion + edge-tts scripted walkthrough, reproducible by npm run render
+docs/          architecture, threat model, vision
 scripts/       preflight, key generation, tunnel, deploy, secret and binding checks
                check-web-abi.ts           pins the console's ABI to the compiled contract
 ```
@@ -156,8 +155,9 @@ scripts/install-hooks.sh         # secret scanning on commit and push
 scripts/preflight.sh             # toolchain, endpoints, balances, hygiene
 ```
 
-Then follow **[docs/demo-script.md](docs/demo-script.md)**, which walks the whole
-path from an empty machine to a settled payment.
+`preflight.sh` checks the toolchain, every endpoint the system uses, the deployer
+balance, and that nothing secret is tracked. Fix anything it reports before going
+further — those failures are much harder to diagnose later.
 
 Requirements: Go 1.25+, Foundry, Docker, Node 20+, `jq`, `cloudflared`.
 
@@ -166,9 +166,7 @@ Requirements: Go 1.25+, Foundry, Docker, Node 20+, `jq`, `cloudflared`.
 ## What was newly built during the program
 
 Everything in `contracts/`, `services/`, `infra/`, `apps/web/`, `scripts/`, and
-all of `extension/go/internal` and `extension/go/cmd` is new work. See
-[docs/submission.md](docs/submission.md) for the line-by-line split between what
-was written, what was forked, and what was reused unchanged.
+all of `extension/go/internal` and `extension/go/cmd` is new work.
 
 In short: `extension/` began as a fork of Flare's `fce-sign` example, kept for its
 deployment and TEE-registration tooling, with its handlers replaced entirely.
