@@ -33,9 +33,28 @@ if [[ ${#files[@]} -eq 0 ]]; then
 fi
 
 # Files that are allowed to contain example-shaped values.
+# Two different questions, deliberately answered by two different predicates.
+#
+# `is_example` answers "is this file allowed to be tracked at all?" — an example
+# env or proxy config is, a real one is not.
 is_example() {
   case "$1" in
     *.example|*.example.*|*/.env.example|SECURITY.md|docs/threat-model.md) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# `skip_key_scan` answers "may this file contain a 64-hex literal harmlessly?"
+# Only prose that quotes hashes as illustration.
+#
+# Note what is deliberately NOT here: `.env.example`. An example env file is
+# committed by definition, which makes it the likeliest place for a real key to be
+# pasted and published — exempting it inverts the check. Upstream's fce-sign
+# example shipped a live testnet key with 1300 transactions in exactly that spot,
+# and folding this into `is_example` meant the scanner never said a word about it.
+skip_key_scan() {
+  case "$1" in
+    SECURITY.md|docs/threat-model.md|docs/architecture.md) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -111,7 +130,7 @@ for f in "${files[@]}"; do
         804b01a8c27a65cc694a867be76edae3ccce7a7161cda1f67a8349df696d2207|\
         abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890) continue ;;
       esac
-      is_example "$f" && continue
+      skip_key_scan "$f" && continue
       # Outside env files, require the line to name a secret (see above).
       if [[ $require_context -eq 1 ]] && ! printf '%s' "$line" | grep -qiE "$key_context"; then
         continue
