@@ -18,6 +18,12 @@ cd "$repo_root"
 [[ -f .env ]] || { printf '%sNo .env.%s Run: cp .env.example .env && scripts/new-testnet-keys.sh\n' "$RED" "$NC" >&2; exit 1; }
 set -a; . ./.env; set +a
 
+# Foundry reads $CHAIN as if it were `--chain`, and its name for this network is
+# `flare-coston2` — a stray `CHAIN=coston2` in the environment makes every forge and
+# cast call below fail with "invalid value 'coston2' for '--chain'". .env no longer
+# sets it, but a user's shell might. The RPC URL selects the network here.
+unset CHAIN
+
 : "${DEPLOYMENT_PRIVATE_KEY:?set DEPLOYMENT_PRIVATE_KEY in .env (scripts/new-testnet-keys.sh)}"
 CHAIN_URL="${CHAIN_URL:-https://coston2-api.flare.network/ext/C/rpc}"
 
@@ -43,12 +49,14 @@ printf 'Building...\n'
 forge build >/dev/null
 
 printf 'Deploying BridgeSafeController...\n'
+# `--constructor-args` is variadic, so anything after it is swallowed as another
+# argument. It has to come last, or forge reports an argument-count mismatch.
 CONTROLLER="$(forge create src/BridgeSafeController.sol:BridgeSafeController \
   --rpc-url "$CHAIN_URL" \
   --private-key "$DEPLOYMENT_PRIVATE_KEY" \
   --broadcast \
-  --constructor-args "$FLARE_TEE_MANAGER" "$FLARE_TEE_MANAGER" \
-  --json | jq -r '.deployedTo')"
+  --json \
+  --constructor-args "$FLARE_TEE_MANAGER" "$FLARE_TEE_MANAGER" | jq -r '.deployedTo')"
 [[ -n "$CONTROLLER" && "$CONTROLLER" != "null" ]] || { printf '%sController deployment failed.%s\n' "$RED" "$NC" >&2; exit 1; }
 printf '  %s✔%s controller %s\n' "$GRN" "$NC" "$CONTROLLER"
 
@@ -60,8 +68,8 @@ VERIFIER="$(forge create src/BridgeSafeFdcVerifier.sol:BridgeSafeFdcVerifier \
   --rpc-url "$CHAIN_URL" \
   --private-key "$DEPLOYMENT_PRIVATE_KEY" \
   --broadcast \
-  --constructor-args "$CONTROLLER" "$SOURCE_TEST_XRP" "0x0000000000000000000000000000000000000000" \
-  --json | jq -r '.deployedTo')"
+  --json \
+  --constructor-args "$CONTROLLER" "$SOURCE_TEST_XRP" "0x0000000000000000000000000000000000000000" | jq -r '.deployedTo')"
 [[ -n "$VERIFIER" && "$VERIFIER" != "null" ]] || { printf '%sVerifier deployment failed.%s\n' "$RED" "$NC" >&2; exit 1; }
 printf '  %s✔%s verifier   %s\n' "$GRN" "$NC" "$VERIFIER"
 

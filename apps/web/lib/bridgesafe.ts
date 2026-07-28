@@ -145,6 +145,7 @@ export const controllerAbi = [
             ],
           },
           { name: "policyCommitment", type: "bytes32" },
+          { name: "pendingPolicyCommitment", type: "bytes32" },
           { name: "reservedDrops", type: "uint256" },
           { name: "nextNonce", type: "uint64" },
           { name: "bound", type: "bool" },
@@ -189,6 +190,7 @@ export type Treasury = {
   xrplAddressHash: Hex;
   policy: { maxPerPaymentDrops: bigint; maxTotalDrops: bigint; requestTtlSeconds: bigint };
   policyCommitment: Hex;
+  pendingPolicyCommitment: Hex;
   reservedDrops: bigint;
   nextNonce: bigint;
   bound: boolean;

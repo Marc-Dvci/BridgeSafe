@@ -77,6 +77,19 @@ else bad "a container port is exposed beyond loopback" "Run scripts/check-bindin
 if bash scripts/check-secrets.sh --all >/dev/null 2>&1; then ok "no secrets tracked"
 else bad "possible secret in tracked files" "Run scripts/check-secrets.sh --all"; fi
 
+# The console declares its own ABI fragments, so a Solidity struct change would
+# otherwise surface only as a runtime decode failure in front of a judge.
+if [[ -f contracts/out/BridgeSafeController.sol/BridgeSafeController.json ]]; then
+  if node --experimental-strip-types scripts/check-web-abi.ts >/dev/null 2>&1; then
+    ok "console ABI matches the compiled contract"
+  else
+    bad "console ABI has drifted from the contract" \
+      "Run: node --experimental-strip-types scripts/check-web-abi.ts"
+  fi
+else
+  note "console ABI not checked" "no artifact yet — run: cd contracts && forge build"
+fi
+
 printf '\n'
 if [[ $fail -gt 0 ]]; then
   printf '%s%d blocking problem(s), %d warning(s).%s\n\n' "$RED" "$fail" "$warn" "$NC"; exit 1
