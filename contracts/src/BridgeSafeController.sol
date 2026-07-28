@@ -251,7 +251,12 @@ contract BridgeSafeController {
         bytes32 destinationHash
     );
     event SignatureRequested(uint256 indexed requestId, bytes32 instructionId);
-    event PaymentSigned(uint256 indexed requestId, bytes32 expectedTxId, bytes32 signedBlobHash);
+    event PaymentSigned(
+        uint256 indexed requestId,
+        bytes32 expectedTxId,
+        bytes32 signedBlobHash,
+        bytes signedTxBlob
+    );
     event PaymentBroadcast(uint256 indexed requestId, bytes32 xrplTxId);
     event PaymentSettled(uint256 indexed requestId, bytes32 xrplTxId, uint256 amountDrops);
     event PaymentExpired(uint256 indexed requestId);
@@ -630,13 +635,20 @@ contract BridgeSafeController {
     }
 
     /// @notice Record the signed XRPL payment the enclave produced.
-    /// @dev Only the expected transaction id and the blob hash are stored. The signed
-    ///      blob itself is carried in the `ActionResult` and collected off chain by the
-    ///      relayer, which keeps a broadcastable payment out of public contract storage
-    ///      until the moment it is submitted.
+    /// @dev The signed blob travels inside the enclave-signed result and is re-emitted
+    ///      here, for two reasons. The stored hash is *derived* from the blob rather than
+    ///      asserted alongside it, so no submitter can pair a real signature with a
+    ///      different transaction. And publishing the blob means any observer can
+    ///      broadcast it, so an uncooperative relayer can delay a payment but cannot
+    ///      strand one.
+    ///
+    ///      Publishing it early is safe: the blob is already signed for one destination
+    ///      and one amount, carries this request's memo, and expires with its
+    ///      `LastLedgerSequence`. There is nothing an observer can do with it that the
+    ///      treasury owner did not already authorize.
     /// @param _resultData ABI-encoded `(uint256 chainId, address controller,
     ///        uint256 requestId, bytes32 memoRef, bytes32 expectedTxId,
-    ///        bytes32 signedBlobHash)`.
+    ///        bytes signedTxBlob)`.
     function submitSignedPayment(
         bytes calldata _resultData,
         bytes32 _actionId,
@@ -652,8 +664,8 @@ contract BridgeSafeController {
             uint256 requestId_,
             bytes32 memoRef_,
             bytes32 expectedTxId_,
-            bytes32 signedBlobHash_
-        ) = abi.decode(_resultData, (uint256, address, uint256, bytes32, bytes32, bytes32));
+            bytes memory signedTxBlob_
+        ) = abi.decode(_resultData, (uint256, address, uint256, bytes32, bytes32, bytes));
 
         if (chainId_ != block.chainid || controller_ != address(this)) revert ResultBindingMismatch();
 
@@ -661,13 +673,13 @@ contract BridgeSafeController {
         _requireState(requestId_, r.state, RequestState.AUTHORIZED);
         if (block.timestamp > r.expiresAt) revert RequestExpired(requestId_, r.expiresAt);
         if (memoRef_ != r.memoRef) revert ResultBindingMismatch();
-        if (expectedTxId_ == bytes32(0) || signedBlobHash_ == bytes32(0)) revert ResultBindingMismatch();
+        if (expectedTxId_ == bytes32(0) || signedTxBlob_.length == 0) revert ResultBindingMismatch();
 
         r.expectedTxId = expectedTxId_;
-        r.signedBlobHash = signedBlobHash_;
+        r.signedBlobHash = keccak256(signedTxBlob_);
         r.state = RequestState.SIGNED;
 
-        emit PaymentSigned(requestId_, expectedTxId_, signedBlobHash_);
+        emit PaymentSigned(requestId_, expectedTxId_, r.signedBlobHash, signedTxBlob_);
     }
 
     /// @notice Report that the signed payment was submitted to XRPL.

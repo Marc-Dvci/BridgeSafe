@@ -72,9 +72,25 @@ for f in "${files[@]}"; do
   grep -Iq . "$f" 2>/dev/null || continue
 
   # 2. Private-key-shaped strings.
-  #    A bare 64-hex run, with or without 0x. Placeholders of a single repeated
-  #    character (0000..., aaaa...) and the well-known Hardhat dev keys are fine.
+  #
+  #    A bare 64-hex run is ambiguous: it is equally the shape of a secp256k1
+  #    private key and of every keccak hash, event topic and test vector in a
+  #    codebase like this one. Flagging all of them produced ~20 false positives
+  #    per commit here, and a scanner that cries wolf gets bypassed, which is
+  #    strictly worse than a narrower one.
+  #
+  #    So outside of env files, a 64-hex literal is reported only when the same
+  #    line also names a secret. That is where keys actually end up — pasted into
+  #    an assignment called PRIVATE_KEY, deployerKey, secret, seed. Inside .env
+  #    files every 64-hex literal is reported regardless, because nothing else
+  #    belongs there.
   if ! is_hash_manifest "$f"; then
+    # POSIX ERE — case-insensitivity comes from grep -i, not an inline (?i) flag.
+    key_context='(priv[-_ ]?key|private[-_ ]?key|privatekey|secret|seed|mnemonic|passphrase|deployer[-_ ]?key|signing[-_ ]?key|wallet[-_ ]?key|keystore)'
+    case "$f" in
+      .env|.env.*|*/.env|*/.env.*) require_context=0 ;;
+      *) require_context=1 ;;
+    esac
     while IFS=: read -r lineno line; do
       [[ -z "${lineno:-}" ]] && continue
       hex=$(printf '%s' "$line" | grep -oiE '(0x)?[0-9a-f]{64}' | head -1)
@@ -82,15 +98,26 @@ for f in "${files[@]}"; do
       stripped=${hex#0x}; stripped=${stripped#0X}
       # single repeated character => placeholder
       if [[ "$stripped" =~ ^(.)\1{63}$ ]]; then continue; fi
-      # Hardhat / Anvil well-known dev keys are public by design
+      # Keys that are public by design, so flagging them is pure noise:
+      #   - the standard Hardhat/Anvil dev accounts,
+      #   - the default local key baked into Flare's own FCC tooling
+      #     (extension/go/tools/cmd/start-tee, local chain only),
+      #   - the obvious "abcdef1234..." dummy in Flare's validate tests.
+      # Anything not on this list is still reported.
       case "$stripped" in
         ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80|\
         59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d|\
-        5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a) continue ;;
+        5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a|\
+        804b01a8c27a65cc694a867be76edae3ccce7a7161cda1f67a8349df696d2207|\
+        abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890) continue ;;
       esac
       is_example "$f" && continue
+      # Outside env files, require the line to name a secret (see above).
+      if [[ $require_context -eq 1 ]] && ! printf '%s' "$line" | grep -qiE "$key_context"; then
+        continue
+      fi
       report "possible private key in $f:$lineno" \
-        "Found a 64-hex literal. Move it to .env (gitignored) and reference it by name."
+        "A 64-hex literal on a line naming a secret. Move it to .env (gitignored) and reference it by name."
     done < <(grep -nE '(0x)?[0-9a-fA-F]{64}' "$f" 2>/dev/null | cut -d: -f1,2 --output-delimiter=: | head -50)
   fi
 

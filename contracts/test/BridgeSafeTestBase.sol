@@ -201,7 +201,7 @@ abstract contract BridgeSafeTestBase is Test {
             _requestId,
             r.memoRef,
             _expectedTxId,
-            keccak256("signed-blob")
+            hex"120000228000000024000000012E00000000"
         );
         bytes32 actionId = keccak256(abi.encode("sign", _requestId));
         controller.submitSignedPayment(data, actionId, "tag", 1, signAsTee(data, actionId, "tag", 1));

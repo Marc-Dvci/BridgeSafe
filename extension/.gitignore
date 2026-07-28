@@ -1,0 +1,4 @@
+config/extension.env
+config/proxy/*.toml
+!config/proxy/*.toml.example
+go/bin/
