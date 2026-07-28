@@ -179,6 +179,23 @@ abstract contract BridgeSafeTestBase is Test {
         sig = signAsTee(data, actionId, "tag", 1);
     }
 
+    /// @notice Build the enclave's signed acknowledgement of a policy, without submitting it.
+    /// @dev Mirrors `codec.EncodeConfirmPolicy` in the extension.
+    function buildPolicyConfirmation(
+        uint256 _treasuryId,
+        BridgeSafeController.Policy memory _policy
+    ) internal view returns (bytes memory data, bytes32 actionId, bytes memory sig) {
+        data = abi.encode(
+            block.chainid,
+            address(controller),
+            _treasuryId,
+            _policy,
+            controller.policyCommitment(_policy)
+        );
+        actionId = keccak256(abi.encode("register-policy", _treasuryId, _policy.maxPerPaymentDrops));
+        sig = signAsTee(data, actionId, "tag", 1);
+    }
+
     /// @notice Move a request to AUTHORIZED with an enclave-signed decision.
     function authorize(uint256 _requestId, uint256 _amountDrops, string memory _destination) internal {
         (bytes memory data, bytes32 actionId, bytes memory sig) = buildAuthorization(

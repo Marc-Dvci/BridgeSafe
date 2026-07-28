@@ -820,4 +820,183 @@ contract SecurityTest is BridgeSafeTestBase {
         vm.expectRevert(BridgeSafeController.ExtensionIdAlreadySet.selector);
         controller.setExtensionId();
     }
+
+    // -----------------------------------------------------------------------
+    // Policy updates
+    // -----------------------------------------------------------------------
+
+    /// @dev Tightening a policy has to stick. `confirmPolicy` is permissionless and takes
+    ///      an enclave-signed result, so without a guard binding it to a *pending* request
+    ///      the signed acknowledgement of an older, looser policy stays valid forever and
+    ///      anyone can replay it to roll the published limits back.
+    ///
+    ///      This is not only a bookkeeping problem. The enclave refuses any payment whose
+    ///      instruction header carries a policy commitment other than the one it currently
+    ///      holds (extension.go, handleAuthorizePayment), so a rolled-back commitment also
+    ///      bricks the treasury: every subsequent request is declined until the owner runs
+    ///      another update, which the same replay can immediately undo.
+    function test_Reject_ReplayingAnOldPolicyConfirmation() public {
+        uint256 treasuryId = createBoundTreasury();
+
+        // The owner tightens the per-payment cap from 100 XRP to 5 XRP.
+        BridgeSafeController.Policy memory tight = BridgeSafeController.Policy({
+            maxPerPaymentDrops: 5 * XRP,
+            maxTotalDrops: 500 * XRP,
+            requestTtlSeconds: 30 minutes
+        });
+
+        vm.prank(treasuryOwner);
+        controller.requestPolicyUpdate{value: 0.01 ether}(treasuryId, tight);
+
+        (bytes memory tightData, bytes32 tightAction, bytes memory tightSig) = buildPolicyConfirmation(
+            treasuryId,
+            tight
+        );
+        controller.confirmPolicy(tightData, tightAction, "tag", 1, tightSig);
+        assertEq(controller.getTreasury(treasuryId).policy.maxPerPaymentDrops, 5 * XRP);
+
+        // The enclave's acknowledgement of the ORIGINAL loose policy is still a validly
+        // signed result. A stranger replays it.
+        (bytes memory looseData, bytes32 looseAction, bytes memory looseSig) = buildPolicyConfirmation(
+            treasuryId,
+            defaultPolicy()
+        );
+
+        vm.prank(stranger);
+        vm.expectRevert(BridgeSafeController.NoPendingPolicy.selector);
+        controller.confirmPolicy(looseData, looseAction, "tag", 1, looseSig);
+
+        // The tightened cap survives.
+        assertEq(controller.getTreasury(treasuryId).policy.maxPerPaymentDrops, 5 * XRP);
+        assertEq(
+            controller.getTreasury(treasuryId).policyCommitment,
+            controller.policyCommitment(tight)
+        );
+    }
+
+    /// @dev A confirmation the owner never asked for is refused, even with a good
+    ///      signature — the enclave should not be able to install its own limits.
+    function test_Reject_PolicyConfirmationThatWasNeverRequested() public {
+        uint256 treasuryId = createBoundTreasury();
+
+        BridgeSafeController.Policy memory unrequested = BridgeSafeController.Policy({
+            maxPerPaymentDrops: 10_000 * XRP,
+            maxTotalDrops: 10_000 * XRP,
+            requestTtlSeconds: 30 minutes
+        });
+
+        (bytes memory data, bytes32 actionId, bytes memory sig) = buildPolicyConfirmation(
+            treasuryId,
+            unrequested
+        );
+
+        vm.expectRevert(BridgeSafeController.NoPendingPolicy.selector);
+        controller.confirmPolicy(data, actionId, "tag", 1, sig);
+    }
+
+    /// @dev One request, one confirmation. The second attempt has nothing pending.
+    function test_Reject_ConfirmingTheSamePolicyUpdateTwice() public {
+        uint256 treasuryId = createBoundTreasury();
+
+        BridgeSafeController.Policy memory next = BridgeSafeController.Policy({
+            maxPerPaymentDrops: 50 * XRP,
+            maxTotalDrops: 500 * XRP,
+            requestTtlSeconds: 30 minutes
+        });
+
+        vm.prank(treasuryOwner);
+        controller.requestPolicyUpdate{value: 0.01 ether}(treasuryId, next);
+
+        (bytes memory data, bytes32 actionId, bytes memory sig) = buildPolicyConfirmation(
+            treasuryId,
+            next
+        );
+        controller.confirmPolicy(data, actionId, "tag", 1, sig);
+
+        vm.expectRevert(BridgeSafeController.NoPendingPolicy.selector);
+        controller.confirmPolicy(data, actionId, "tag", 1, sig);
+    }
+
+    /// @dev The enclave answering with different terms than were requested is refused.
+    function test_Reject_PolicyConfirmationThatDoesNotMatchTheRequest() public {
+        uint256 treasuryId = createBoundTreasury();
+
+        BridgeSafeController.Policy memory requested = BridgeSafeController.Policy({
+            maxPerPaymentDrops: 5 * XRP,
+            maxTotalDrops: 500 * XRP,
+            requestTtlSeconds: 30 minutes
+        });
+        BridgeSafeController.Policy memory substituted = BridgeSafeController.Policy({
+            maxPerPaymentDrops: 90 * XRP,
+            maxTotalDrops: 500 * XRP,
+            requestTtlSeconds: 30 minutes
+        });
+
+        vm.prank(treasuryOwner);
+        controller.requestPolicyUpdate{value: 0.01 ether}(treasuryId, requested);
+
+        (bytes memory data, bytes32 actionId, bytes memory sig) = buildPolicyConfirmation(
+            treasuryId,
+            substituted
+        );
+
+        vm.expectRevert(BridgeSafeController.NoPendingPolicy.selector);
+        controller.confirmPolicy(data, actionId, "tag", 1, sig);
+    }
+
+    /// @dev The happy path, so the guard cannot be satisfied by simply breaking updates.
+    function test_PolicyUpdateAppliesOnceTheEnclaveAcknowledgesIt() public {
+        uint256 treasuryId = createBoundTreasury();
+
+        BridgeSafeController.Policy memory next = BridgeSafeController.Policy({
+            maxPerPaymentDrops: 250 * XRP,
+            maxTotalDrops: 1_000 * XRP,
+            requestTtlSeconds: 45 minutes
+        });
+
+        vm.prank(treasuryOwner);
+        controller.requestPolicyUpdate{value: 0.01 ether}(treasuryId, next);
+
+        // Still the old policy until the enclave confirms.
+        assertEq(controller.getTreasury(treasuryId).policy.maxPerPaymentDrops, 100 * XRP);
+
+        (bytes memory data, bytes32 actionId, bytes memory sig) = buildPolicyConfirmation(
+            treasuryId,
+            next
+        );
+        controller.confirmPolicy(data, actionId, "tag", 1, sig);
+
+        BridgeSafeController.Treasury memory t = controller.getTreasury(treasuryId);
+        assertEq(t.policy.maxPerPaymentDrops, 250 * XRP);
+        assertEq(t.policy.maxTotalDrops, 1_000 * XRP);
+        assertEq(t.policy.requestTtlSeconds, 45 minutes);
+        assertEq(t.policyCommitment, controller.policyCommitment(next));
+    }
+
+    /// @dev A policy update may not strand the treasury below what it has already
+    ///      committed to spend — `availableDrops` would underflow and revert.
+    function test_Reject_PolicyUpdateBelowAlreadyReservedSpend() public {
+        uint256 treasuryId = createBoundTreasury();
+
+        uint256 requestId = openRequest(treasuryId);
+        authorize(requestId, 80 * XRP, PAYEE_XRPL);
+
+        BridgeSafeController.Policy memory tooLow = BridgeSafeController.Policy({
+            maxPerPaymentDrops: 10 * XRP,
+            maxTotalDrops: 50 * XRP, // below the 80 XRP already reserved
+            requestTtlSeconds: 30 minutes
+        });
+
+        vm.prank(treasuryOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                BridgeSafeController.InvalidPolicy.selector,
+                "cumulative cap below reserved spend"
+            )
+        );
+        controller.requestPolicyUpdate{value: 0.01 ether}(treasuryId, tooLow);
+
+        // The treasury remains readable.
+        assertEq(controller.availableDrops(treasuryId), 500 * XRP - 80 * XRP);
+    }
 }

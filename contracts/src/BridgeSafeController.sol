@@ -115,6 +115,9 @@ contract BridgeSafeController {
     /// @param xrplAddressHash `keccak256(bytes(xrplAddress))` — the form FDC reports.
     /// @param policy Current spending rules.
     /// @param policyCommitment `keccak256(abi.encode(policy))` acknowledged by the enclave.
+    /// @param pendingPolicyCommitment Commitment of a policy update awaiting enclave
+    ///        acknowledgement, or zero when no update is outstanding. Consumed by
+    ///        `confirmPolicy`, which is what stops an old acknowledgement being replayed.
     /// @param reservedDrops Cumulative drops reserved by authorized-or-later requests.
     /// @param nextNonce Next sequential request nonce for this treasury.
     /// @param bound True once the enclave has returned the XRPL address.
@@ -126,6 +129,7 @@ contract BridgeSafeController {
         bytes32 xrplAddressHash;
         Policy policy;
         bytes32 policyCommitment;
+        bytes32 pendingPolicyCommitment;
         uint256 reservedDrops;
         uint64 nextNonce;
         bool bound;
@@ -279,6 +283,7 @@ contract BridgeSafeController {
     error TreasuryNotBound(uint256 treasuryId);
     error TreasuryAlreadyBound(uint256 treasuryId);
     error InvalidPolicy(string reason);
+    error NoPendingPolicy();
     error WrongState(uint256 requestId, RequestState expected, RequestState actual);
     error RequestExpired(uint256 requestId, uint64 expiresAt);
     error NotYetExpired(uint256 requestId, uint64 expirableAt);
@@ -449,6 +454,10 @@ contract BridgeSafeController {
     /// @dev The new policy takes effect on chain only once the enclave acknowledges it
     ///      via `confirmPolicy`, so the contract and the enclave can never disagree about
     ///      which rules are live.
+    ///
+    ///      The commitment is recorded as *pending* here. That record is what
+    ///      `confirmPolicy` spends, and it is the reason an acknowledgement cannot be
+    ///      replayed: see the note on that function.
     function requestPolicyUpdate(
         uint256 _treasuryId,
         Policy calldata _policy
@@ -458,7 +467,14 @@ contract BridgeSafeController {
         if (!t.bound) revert TreasuryNotBound(_treasuryId);
         _validatePolicy(_policy);
 
+        // A cap below what is already reserved would leave `availableDrops` underwater.
+        if (_policy.maxTotalDrops < t.reservedDrops) {
+            revert InvalidPolicy("cumulative cap below reserved spend");
+        }
+
         bytes32 newCommitment = policyCommitment(_policy);
+        t.pendingPolicyCommitment = newCommitment;
+
         bytes32 instructionId = _send(
             OP_CMD_REGISTER_POLICY,
             abi.encode(_header(_treasuryId, 0, 0, 0, bytes32(0), newCommitment), _policy)
@@ -468,6 +484,22 @@ contract BridgeSafeController {
     }
 
     /// @notice Record the enclave's acknowledgement of a new policy.
+    /// @dev This function is permissionless and its authority is an enclave signature,
+    ///      which never expires. Every other result handler is protected from replay by
+    ///      the state machine — a request can only leave `CREATED` once. A policy has no
+    ///      such monotonic state, so the guard is explicit: the acknowledgement must match
+    ///      the commitment currently pending for this treasury, and consuming it clears
+    ///      the slot.
+    ///
+    ///      Without that, the signed acknowledgement of a superseded policy stays valid
+    ///      forever and anyone could replay it to reinstate looser published limits. Worse
+    ///      than the bookkeeping: the enclave declines any payment whose header commitment
+    ///      disagrees with its own cached policy, so a rolled-back commitment would stop
+    ///      the treasury from paying at all until the owner issued another update — which
+    ///      the same replay could undo again immediately.
+    ///
+    ///      It also means the enclave cannot install limits of its own choosing; it can
+    ///      only acknowledge terms the treasury owner already published on chain.
     /// @param _resultData ABI-encoded `(uint256 chainId, address controller,
     ///        uint256 treasuryId, Policy policy, bytes32 policyCommitment)`.
     function confirmPolicy(
@@ -491,6 +523,11 @@ contract BridgeSafeController {
         if (commitment_ != policyCommitment(policy_)) revert ResultBindingMismatch();
 
         Treasury storage t = _mutTreasury(treasuryId_);
+        if (t.pendingPolicyCommitment == bytes32(0) || commitment_ != t.pendingPolicyCommitment) {
+            revert NoPendingPolicy();
+        }
+
+        t.pendingPolicyCommitment = bytes32(0);
         t.policy = policy_;
         t.policyCommitment = commitment_;
 
