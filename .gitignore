@@ -58,3 +58,7 @@ Thumbs.db
 logs/
 tmp/
 .scratch/
+
+# Next.js
+apps/web/.next/
+apps/web/next-env.d.ts
