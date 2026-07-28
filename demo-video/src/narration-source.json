@@ -1,0 +1,122 @@
+[
+  {
+    "id": "problem",
+    "file": "audio/01.mp3",
+    "start": 0.0,
+    "script": "An organisation holding XRP has two ways to let software spend it. Hand a bot the private key and hope. Or put a person in the loop for every single payment. Neither gives you enforced limits and proof that the payment you authorised is the payment that happened.",
+    "captions": [
+      "An organisation holding XRP has two ways to let software spend it.",
+      "Hand a bot the private key and hope.",
+      "Or put a person in the loop for every single payment.",
+      "Neither gives you enforced limits — and proof that the payment you authorised is the payment that happened."
+    ]
+  },
+  {
+    "id": "pitch",
+    "file": "audio/02.mp3",
+    "start": 18.0,
+    "script": "BridgeSafe is an XRPL treasury controlled from Flare. Flare authorises. A confidential enclave holds the key and signs. XRPL executes. And nothing counts as settled until the Flare Data Connector proves the payment actually landed.",
+    "captions": [
+      "BridgeSafe is an XRPL treasury controlled from Flare.",
+      "Flare authorises. A confidential enclave holds the key and signs.",
+      "XRPL executes.",
+      "And nothing counts as settled until the Flare Data Connector proves the payment actually landed."
+    ]
+  },
+  {
+    "id": "policy",
+    "file": "audio/03.mp3",
+    "start": 36.5,
+    "script": "The treasury publishes its rules on Flare, in the open. A hundred XRP per payment. Five hundred lifetime. Requests expire after thirty minutes. The limits are public so anyone can audit them. The payments themselves are not.",
+    "captions": [
+      "The treasury publishes its rules on Flare, in the open.",
+      "100 XRP per payment. 500 lifetime. Requests expire after 30 minutes.",
+      "The limits are public so anyone can audit them.",
+      "The payments themselves are not."
+    ]
+  },
+  {
+    "id": "seal",
+    "file": "audio/04.mp3",
+    "start": 55.0,
+    "script": "The treasurer submits a payment. Destination and amount are encrypted to the enclave's key before they ever reach the chain. Flare stores only a hash of that ciphertext. Nobody watching the mempool learns who is about to be paid, or how much.",
+    "captions": [
+      "The treasurer submits a payment.",
+      "Destination and amount are encrypted to the enclave's key before they reach the chain.",
+      "Flare stores only a hash of that ciphertext.",
+      "Nobody watching learns who is about to be paid — or how much."
+    ]
+  },
+  {
+    "id": "enclave",
+    "file": "audio/05.mp3",
+    "start": 72.0,
+    "script": "Inside the trusted execution environment, the instruction is decrypted and checked against the policy. The enclave signs one thing only: a canonical XRPL payment carrying this request's memo. There is no code path from a decrypted instruction to an arbitrary transaction, and the key has no route out.",
+    "captions": [
+      "Inside the trusted execution environment, the instruction is decrypted and checked against the policy.",
+      "The enclave signs one thing only: a canonical XRPL Payment carrying this request's memo.",
+      "There is no path from a decrypted instruction to an arbitrary transaction.",
+      "And the key has no route out."
+    ]
+  },
+  {
+    "id": "execute",
+    "file": "audio/06.mp3",
+    "start": 92.5,
+    "script": "A relay puts the signed blob on the ledger. It holds no key, and it can only carry decisions the enclave already made. This is a real payment on XRPL Testnet, signed by a hand-written codec, landing with the transaction id the enclave predicted before it was ever submitted.",
+    "captions": [
+      "A relay puts the signed blob on the ledger.",
+      "It holds no key — it can only carry decisions the enclave already made.",
+      "A real payment on XRPL Testnet, signed by a hand-written codec,",
+      "landing with the transaction id the enclave predicted before submission."
+    ]
+  },
+  {
+    "id": "proof",
+    "file": "audio/07.mp3",
+    "start": 111.5,
+    "script": "Then the important part. The Flare Data Connector attests the transaction, and the contract checks eight conditions against it. Source account. Destination. Exact amount. The memo. Success status. And that this transaction has never settled another request. Only then does the request become settled.",
+    "captions": [
+      "Then the important part.",
+      "The Flare Data Connector attests the transaction, and the contract checks eight conditions.",
+      "Source. Destination. Exact amount. Memo. Success status.",
+      "And that this transaction has never settled another request.",
+      "Only then does the request become SETTLED."
+    ]
+  },
+  {
+    "id": "trust",
+    "file": "audio/08.mp3",
+    "start": 136.5,
+    "script": "That is what separates this from a signing service. The enclave can sign, but it cannot mark anything settled. The policy is re-checked on chain, independently, so a compromised enclave still cannot exceed the limits the treasury published. And one XRPL payment settles at most one request, ever.",
+    "captions": [
+      "That is what separates this from a signing service.",
+      "The enclave can sign — it cannot mark anything settled.",
+      "The policy is re-checked on chain, so a compromised enclave cannot exceed the published limits.",
+      "And one XRPL payment settles at most one request, ever."
+    ]
+  },
+  {
+    "id": "real",
+    "file": "audio/09.mp3",
+    "start": 157.5,
+    "script": "Both contracts are live and source-verified on Coston2, so every one of those conditions can be read on chain rather than taken on trust. A hundred and twelve tests across three languages, including one that signs a real payment and submits it to the live XRPL ledger.",
+    "captions": [
+      "Both contracts are live and source-verified on Coston2.",
+      "Every condition can be read on chain rather than taken on trust.",
+      "112 tests across three languages —",
+      "including one that signs a real payment and submits it to the live XRPL ledger."
+    ]
+  },
+  {
+    "id": "close",
+    "file": "audio/10.mp3",
+    "start": 175.0,
+    "script": "BridgeSafe makes XRP programmable without wrapping it, without a bridge, and without asking anyone to trust an operator. Flare becomes the control plane for assets that live somewhere else.",
+    "captions": [
+      "BridgeSafe makes XRP programmable — without wrapping it, without a bridge,",
+      "and without asking anyone to trust an operator.",
+      "Flare becomes the control plane for assets that live somewhere else."
+    ]
+  }
+]

@@ -1,0 +1,7 @@
+node_modules/
+# Rendered video: 13 MB, and reproducible with `npm run render`.
+output/
+
+# public/audio/ IS committed on purpose. src/generated-narration.json records the
+# measured duration of each mp3, so the two only stay consistent if they travel
+# together — regenerating would otherwise leave the cue timings subtly stale.

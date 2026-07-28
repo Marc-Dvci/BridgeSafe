@@ -141,7 +141,8 @@ services/      result-relay/              carries signed enclave results on chai
                fdc-worker/                drives the FDC attestation round trip
 infra/         self-hosted C-chain indexer, so the stack needs nothing from Flare support
 apps/web/      console with the execution trace
-docs/          architecture, threat model, demo script, submission notes
+docs/          architecture, threat model, demo script, vision, submission notes
+demo-video/    Remotion + edge-tts scripted walkthrough, reproducible by npm run render
 scripts/       preflight, key generation, tunnel, deploy, secret and binding checks
                check-web-abi.ts           pins the console's ABI to the compiled contract
 ```

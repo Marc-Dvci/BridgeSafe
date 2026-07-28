@@ -203,6 +203,8 @@ policy templates; formal verification and external audit before real value.
 ## Links
 
 - Repository: <https://github.com/Marc-Dvci/BridgeSafe>
+- Vision statement: [`docs/vision.md`](vision.md)
+- Demo video source: [`demo-video/`](../demo-video/) — `npm run render` reproduces it
 - Architecture: [`docs/architecture.md`](architecture.md)
 - Threat model: [`docs/threat-model.md`](threat-model.md)
 - Run it yourself: [`docs/demo-script.md`](demo-script.md)
