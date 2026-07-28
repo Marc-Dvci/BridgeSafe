@@ -20,8 +20,14 @@
 │  XRPL key, generated inside, never leaves      │   │  fdc-worker            │
 │  decrypt · policy check · sign Payment         │   │  prepare → FdcHub →    │
 └───────────┬────────────────────────────────────┘   │  round → DA proof      │
-            │ signed blob (via PaymentSigned event)   └────────▲───────────────┘
+            │ signed result waits on the proxy        └────────▲───────────────┘
             ▼                                                  │
+     ┌──────────────┐                                          │
+     │ result-relay │ ──── bindTreasuryAddress ────────────────┼──► (back to Flare)
+     │ holds no key │      confirmPolicy                       │
+     └───────┬──────┘      submitAuthorization                 │
+             │             submitSignedPayment                 │
+             ▼ signed blob (via PaymentSigned event)            │
      ┌──────────────┐        submit          ┌─────────────────┴──────┐
      │ broadcaster  │ ─────────────────────► │   XRPL Testnet         │
      │ holds no key │                        │   Payment + memo       │
@@ -103,8 +109,25 @@ expiry enforceable on XRPL rather than merely asserted on Flare.
 
 ### Services
 
-Both are unprivileged, and their hand-written ABI fragments are the whole of
+All three are unprivileged, and their hand-written ABI fragments are the whole of
 their on-chain reach.
+
+**result-relay** is the hinge. The enclave answers instructions asynchronously and
+leaves a signed result on the extension proxy; nothing pushes it back. The relay
+watches the four events that dispatch an instruction — `TreasuryCreated`,
+`PolicyUpdateRequested`, `PaymentRequested`, `SignatureRequested` — collects each
+result and calls the matching controller method.
+
+It looks powerful and is not. Every method it calls recovers the enclave's address
+from a signature over the result before changing any state, so the relay can only
+deliver a decision the enclave already made. It cannot invent an authorization,
+change an amount, or redirect a payment. A signed *refusal* is delivered too, via
+`submitFailure`, so a declined request fails cleanly and releases its reserved
+budget rather than sitting until it expires.
+
+The instruction id is read as the last non-indexed field of each event, which is a
+convention the compiler cannot enforce — `TestEveryHandledEventEndsWithTheInstructionId`
+pins it, because getting it wrong would stall every payment with no error anywhere.
 
 **broadcaster** watches `PaymentSigned`, submits the blob the event carries, and
 reports the transaction id. It holds no XRPL key and can call exactly one
@@ -113,8 +136,9 @@ controller method, which only accepts the id the enclave already predicted.
 **fdc-worker** watches `PaymentBroadcast` and runs the attestation round trip. It
 cannot settle by assertion — it delivers a proof and the contract decides.
 
-Settlement is permissionless and the signed blob is public, so neither service
-can strand a payment by going away.
+Settlement is permissionless and the signed blob is public, so no service can
+strand a payment by going away — anyone can run another instance and the backlog
+clears.
 
 ### Local indexer
 
@@ -131,13 +155,14 @@ fewer human dependency.
 2. Enclave recomputes the payload hash, decrypts, requires the plaintext to name
    the same chain / controller / treasury / request as the header, validates the
    destination, checks the policy, caches the authorization.
-3. Contract verifies the enclave signature, re-checks the policy against the
-   published limits, reserves budget, records amount and destination hash.
+3. result-relay collects the signed authorization and submits it. The contract
+   verifies the enclave signature, re-checks the policy against the published
+   limits, reserves budget, records amount and destination hash.
 4. Owner requests a signature. Enclave reads the account sequence and current
    ledger, builds the Payment, signs, deletes the authorization.
-5. Contract verifies the signature, derives the blob hash from the blob itself
-   rather than trusting an asserted one, and publishes the blob so anyone can
-   broadcast it.
+5. result-relay delivers the signed result. The contract verifies the signature,
+   derives the blob hash from the blob itself rather than trusting an asserted
+   one, and publishes the blob so anyone can broadcast it.
 6. Broadcaster submits. XRPL applies a sequence number once, so resubmission
    after a restart cannot produce a second payment.
 7. fdc-worker prepares an attestation, pays the fee, waits ~90–180s for round

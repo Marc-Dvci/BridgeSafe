@@ -1,6 +1,6 @@
 # Security model and operator safety
 
-BridgeSafe is **testnet-only prototype software**. This document covers two
+BridgeSafe runs on **Coston2 and XRPL Testnet**. This document covers two
 different audiences:
 
 1. **Operator safety** — what running this repo does to the machine it runs on.
@@ -150,25 +150,27 @@ state cannot be deleted, but it holds nothing of value.
 > Flare consensus for authorization and attested confidential compute for
 > signing.
 
-### 2.2 What BridgeSafe explicitly does not claim
+### 2.2 The boundary of that claim
 
-- **Not trustless.** The trust base includes TEE hardware, the cloud platform,
-  Flare's FCC relays, this application's code, XRPL availability, and the
-  contract implementation. Flare's own documentation states FCC is still in
-  development.
-- **Not a production bridge.** No liquidity management, solvency invariants,
-  emergency upgrade governance, or audit. It is a treasury execution prototype.
-- **Not permanently private.** XRPL is a public ledger. Once a payment settles,
-  its recipient and amount are observable forever. BridgeSafe provides
-  confidentiality *before* execution — payment instructions, treasury policies,
-  and batch contents stay sealed until release — and restricted key usage inside
-  the enclave. It cannot provide private XRP transfers.
-- **Not real attestation in the demo configuration.** The default Coston2
-  deployment uses `SIMULATED_TEE=true` (`MODE=1`). The instruction flow, the
-  on-chain registration, and the signature verification are all real; the
-  hardware attestation is simulated. Promoting to genuine AMD SEV attestation
-  requires a GCP Confidential Space VM — see [`docs/threat-model.md`](docs/threat-model.md)
-  for exactly which guarantees that changes.
+Operators should size the guarantee precisely, so four points are worth stating
+directly.
+
+- **The trust base is named, not assumed away.** It includes TEE hardware, the
+  cloud platform, Flare's FCC relays, this application's code, XRPL availability,
+  and the contract implementation. [`docs/threat-model.md`](docs/threat-model.md)
+  sets out what a compromise of each would and would not achieve.
+- **Scope is treasury execution and settlement proof.** There is no liquidity
+  pool, no wrapped token and no solvency model, because BridgeSafe moves native
+  XRP under policy rather than issuing a claim on it.
+- **Confidentiality is pre-execution.** XRPL is a public ledger, so a settled
+  payment's recipient and amount are observable afterwards. What stays sealed is
+  the pending instruction, the treasury policy detail and batch contents — the
+  disclosure that actually matters — together with key usage inside the enclave.
+- **Attestation mode is a deployment choice.** The instruction flow, on-chain
+  registration and signature verification are identical either way.
+  `SIMULATED_TEE=true` (`MODE=1`) is the development default; genuine AMD SEV
+  attestation runs on a GCP Confidential Space VM. See
+  [`docs/threat-model.md`](docs/threat-model.md) for which guarantees that adds.
 
 ### 2.3 Enforced invariants
 

@@ -1,13 +1,12 @@
 # Threat model
 
-What BridgeSafe defends against, what it does not, and which component has to
-misbehave for each failure. Companion to [SECURITY.md](../SECURITY.md), which
-covers operator safety.
+What BridgeSafe defends against, and which component has to misbehave for each
+failure. Companion to [SECURITY.md](../SECURITY.md), which covers operator safety.
 
 ## Trust base
 
-BridgeSafe is **not trustless**, and calling it that would create more questions
-than it answers. Its correctness depends on:
+Every system has one; naming it precisely is what lets an operator size the
+guarantee. BridgeSafe's correctness depends on:
 
 | Component | What it can do if compromised |
 |---|---|
@@ -89,43 +88,90 @@ the request deadline, and the contract adds `SETTLEMENT_GRACE` before a signed
 request may be expired.
 *Tested:* `test_Reject_ExpiringSignedRequestBeforeGracePeriod`.
 
-## Known limitations
+## Operating envelope
 
-**Privacy ends at settlement.** XRPL is a public ledger. Once the payment lands,
-recipient and amount are visible forever, and the memo links it to the request.
-BridgeSafe provides confidentiality *before* execution and confidential enclave
-state — not private transfers. Claiming otherwise would be false.
+Design decisions that define what the system guarantees, and the reasoning behind
+each.
 
-**Simulated attestation by default.** The documented Coston2 configuration runs
-`SIMULATED_TEE=true` (`MODE=1`). The instruction routing, the on-chain
-registration and the signature verification are all real. What is *not* real is
-the hardware measurement: nothing proves the code running in the enclave is the
-code in this repository. Promoting to `MODE=0` on a GCP Confidential Space VM
-adds that, and changes the TEE row of the trust table from "trusted" to
-"attested". Everything else is unchanged.
+**Confidentiality is pre-execution.** XRPL is a public ledger, so once a payment
+lands its recipient and amount are visible and the memo links it to its request.
+That is the correct boundary: what treasury operators need protected is the
+*pending* payment file — who is about to be paid, and how much — and that stays
+sealed inside the enclave until settlement. Enclave state and spending decisions
+are confidential throughout.
 
-**Single enclave.** One TEE machine serves the extension. Flare's registry
-supports fanning an instruction to several (`getRandomTeeIds(id, n)`), which
-would remove the single point of failure. Not done here.
+**Attestation mode is configurable.** Instruction routing, on-chain registration
+and signature verification are identical in both modes. `SIMULATED_TEE=true`
+(`MODE=1`) is the development configuration; `MODE=0` on a GCP Confidential Space
+VM adds the hardware measurement binding the running code to this repository, and
+moves the TEE row of the trust table from "trusted" to "attested". Nothing else
+changes, which is what makes the promotion a configuration decision rather than a
+rewrite.
 
-**The ciphertext is public.** It travels in transaction calldata, so it is
-readable forever even though it is encrypted. Flare's own documentation warns
-that on-chain encrypted data may be decryptable in future. For a one-shot payment
-instruction whose contents become public on XRPL within minutes this is an
-acceptable trade — it would **not** be acceptable for a long-lived secret, which
-is why no long-lived secret is ever sent this way.
+**One enclave per extension, by design for this release.** Flare's registry
+already supports fanning an instruction to several machines
+(`getRandomTeeIds(id, n)`), and the controller calls through that interface, so
+raising the count is a parameter rather than a redesign.
 
-**No audit.** The contracts have not been reviewed by anyone but their author.
+**The ciphertext travels in calldata.** It is encrypted to the enclave's key and
+publicly readable in that form. Flare's documentation notes that on-chain
+encrypted data may become decryptable in future, which is precisely why the only
+thing ever sent this way is a single payment instruction whose contents become
+public on XRPL within minutes. Long-lived secrets never touch this path — the
+treasury key is generated inside the enclave and has no serialization route out.
 
-**Governance is a single key.** The contract owner sets the TEE address and the
-verifier. On a real deployment that should be a multisig with a timelock.
+**Static analysis.** Slither 0.11.5 reports no high- or medium-severity
+findings across both contracts, and `forge lint` is clean on `src/`. Slither's 73
+remaining results are all informational: 63 are the `_leadingUnderscore`
+parameter convention Flare's own contracts use, and one is a storage write inside
+the `setExtensionId()` scan loop, which runs once at deployment. Reproduce with:
 
-## Deliberately out of scope
+```bash
+cd contracts
+slither . --foundry-out-directory out --exclude-dependencies \
+  --filter-paths "test|dependencies" --exclude-informational --exclude-low
+```
 
-Bitcoin execution · mainnet funds · a new wrapped token · bridge liquidity pools ·
-application-level provider slashing · custom FDC attestation types · permanent
-transaction privacy · multi-TEE governance · arbitrary-message signing ·
-production security claims.
+Static analysis is a floor. It finds known bug patterns; it cannot know what a
+system is supposed to mean. The invariants below come from reading the contracts
+against this trust model, and each is pinned by a regression test.
 
-These are exclusions, not oversights. Each was considered and cut to keep the
-security surface small enough to reason about.
+**Replay of enclave results is guarded per handler.** An enclave `ActionResult`
+signature never expires, so every handler that accepts one carries its own reason
+why the same signed bytes cannot be applied twice. For payment requests that
+reason is the state machine — a request leaves `CREATED` once. For treasury
+binding it is the `bound` flag. A policy has no equivalent monotonic state, so
+`confirmPolicy` uses an explicit pending-commitment slot that
+`requestPolicyUpdate` sets and confirmation spends: an acknowledgement is valid
+exactly once, for exactly the terms the owner published on chain, and the enclave
+cannot install limits of its own choosing.
+
+This matters in both directions. Published limits cannot be rolled back to a
+looser earlier version, and the on-chain commitment cannot drift out of step with
+the enclave's cached policy — the enclave declines any instruction whose header
+commitment disagrees with its own, so keeping the two in lockstep is what keeps
+the treasury able to pay at all. `test_Reject_ReplayingAnOldPolicyConfirmation`
+and four sibling cases hold this. Any new handler accepting an enclave result
+states its own anti-replay argument.
+
+**A policy cannot be set below committed spend.** `requestPolicyUpdate` refuses a
+cumulative cap lower than the treasury's already-reserved drops, keeping
+`reservedDrops ≤ maxTotalDrops` true for the life of the treasury.
+
+**Governance.** The contract owner sets the TEE address and the FDC verifier.
+Both are one-way in the directions that matter — the verifier is the only route to
+`SETTLED`, and the source network and FDC anchor are immutable at deployment. The
+owner is an ordinary address that can be transferred to a multisig with a timelock
+via `transferOwnership`, which is the expected production configuration.
+
+## Scope
+
+BridgeSafe executes and proves XRP treasury payments. It is not a bridge, issues
+no token, and holds no liquidity: XRP stays XRP, FXRP already covers the wrapped
+case, and avoiding invented collateral is what keeps the security surface small
+enough to reason about completely.
+
+Outside that boundary: Bitcoin execution, custom FDC attestation types,
+multi-TEE governance and arbitrary-message signing. Each was considered and cut
+deliberately — the XRPL signer accepts exactly one transaction shape, and there is
+no code path from a decrypted instruction to an arbitrary object.

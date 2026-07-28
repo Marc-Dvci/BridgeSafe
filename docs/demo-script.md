@@ -30,7 +30,7 @@ these failures are much harder to diagnose later.
 ## 1. Contracts
 
 ```bash
-cd contracts && forge test        # 58 tests
+cd contracts && forge test        # 64 tests
 cd .. && scripts/deploy-coston2.sh
 ```
 
@@ -121,13 +121,31 @@ cast send "$BRIDGESAFE_CONTROLLER" "setExtensionId()" \
 
 ## 6. Start the supporting services
 
-Three terminals:
+Four terminals:
 
 ```bash
 cd extension/go && go run ./cmd/payload-builder            # seals instructions, loopback only
+cd services && go run ./cmd/result-relay                   # carries enclave results on chain
 cd services && go run ./cmd/broadcaster                    # submits signed blobs
 cd services && go run ./cmd/fdc-worker                     # drives FDC attestation
 ```
+
+`result-relay` is the one that makes the rest move. The contract dispatches an
+instruction and the enclave answers asynchronously, leaving a signed result on the
+extension proxy; the relay watches for the four dispatching events, collects each
+result and delivers it to the matching controller method. Without it a request
+stays in `CREATED` and nothing downstream ever fires.
+
+It should log its enclave address at startup:
+
+```
+result-relay ready
+  controller 0x…
+  proxy      https://….trycloudflare.com
+  enclave    0x…
+```
+
+If `enclave` is missing, `EXT_PROXY_URL` is wrong or the tunnel is down.
 
 ## 7. Create a treasury
 
@@ -139,14 +157,12 @@ cast send "$BRIDGESAFE_CONTROLLER" \
   --value 0.01ether --rpc-url "$CHAIN_URL" --private-key "$DEPLOYMENT_PRIVATE_KEY"
 ```
 
-The enclave generates the XRPL key and returns the address. Bind it:
+The enclave generates the XRPL key inside the TEE and returns the address.
+`result-relay` picks that result up and calls `bindTreasuryAddress` for you —
+watch for `treasury 1 … bindTreasuryAddress accepted`.
 
-```bash
-cd extension/go && go run ./tools/cmd/query-tee -action latest
-```
-
-Take the signed result and call `bindTreasuryAddress`. Then read the address back
-and **fund it** from the [XRPL testnet faucet](https://faucet.altnet.rippletest.net/accounts):
+Then read the address back and **fund it** from the
+[XRPL testnet faucet](https://faucet.altnet.rippletest.net/accounts):
 
 ```bash
 cast call "$BRIDGESAFE_CONTROLLER" "getTreasury(uint256)" 1 --rpc-url "$CHAIN_URL"
@@ -214,6 +230,15 @@ Full reset, or keep `extension.env` and re-run only `post-build.sh` and `test.sh
 **ext-proxy will not start** — check `docker compose logs ext-proxy`. Almost
 always the indexer database: confirm it is healthy and that the `[db]` block uses
 `host.docker.internal`, not `127.0.0.1`, from inside a container.
+
+**`invalid value 'coston2' for '--chain'`** — something in your shell exports
+`CHAIN=coston2`. Foundry auto-loads `.env` from the working directory and reads
+`$CHAIN` as `--chain`, and its name for this network is `flare-coston2`. This
+repo's `.env` deliberately does not set it; `unset CHAIN` and re-run.
+
+**`Constructor argument count mismatch`** — a flag was written after
+`--constructor-args`, which is variadic and swallows whatever follows it. Put
+`--constructor-args` last.
 
 **`actNotFound` when signing** — the treasury's XRPL account has not been funded.
 

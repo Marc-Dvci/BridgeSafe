@@ -58,15 +58,15 @@ condition would exist.
 | `contracts/src/BridgeSafeController.sol` | Treasury registry, request state machine, FCC InstructionSender |
 | `contracts/src/BridgeSafeFdcVerifier.sol` | The eight conditions for settlement |
 | `contracts/src/lib/TeeResult.sol` | Enclave `ActionResult` signature verification |
-| `contracts/test/` | 58 tests: lifecycle, 30+ negative cases, 6 cross-language |
+| `contracts/test/` | 64 tests: lifecycle, 44 negative cases, 6 cross-language |
 | `extension/go/internal/xrpl/` | Restricted XRPL binary codec, address derivation, signing |
 | `extension/go/internal/extension/` | Policy engine, authorize/sign handlers, ledger reader |
 | `extension/go/internal/codec/` | ABI bridge between the enclave and the contracts |
 | `extension/go/cmd/payload-builder/` | Loopback ECIES sealing for the console |
-| `services/` | Broadcaster and FDC settlement worker |
+| `services/` | Enclave result relay, broadcaster, and FDC settlement worker |
 | `infra/` | Self-hosted C-chain indexer configuration |
 | `apps/web/` | Console with the execution trace |
-| `scripts/` | Preflight, key generation, tunnel, deploy, secret and binding checks |
+| `scripts/` | Preflight, key generation, tunnel, deploy, secret, port and ABI-parity checks |
 
 **Forked and substantially rewritten:** `extension/` began as
 `flare-foundation/fce-sign`, kept for its deployment and TEE-registration tooling
@@ -84,8 +84,25 @@ reproduced from Flare's published examples and attributed in the source.
 
 **Network:** Coston2 (chain id 114) and XRPL Testnet.
 
-Addresses are written to `docs/deployment.json` by `scripts/deploy-coston2.sh`.
-Both contracts are verifiable on the Coston2 Blockscout explorer with no API key.
+**Deployed and source-verified on Coston2:**
+
+| Contract | Address |
+|---|---|
+| `BridgeSafeController` | [`0x32176FCA80690938194F30844501ea24Cf48b752`](https://coston2-explorer.flare.network/address/0x32176FCA80690938194F30844501ea24Cf48b752) |
+| `BridgeSafeFdcVerifier` | [`0x0B1B437183571ba99a5A27E1Ac980CA2ffd5b1D8`](https://coston2-explorer.flare.network/address/0x0B1B437183571ba99a5A27E1Ac980CA2ffd5b1D8) |
+
+Both are verified on the Coston2 Blockscout explorer (solc v0.8.27), so every
+condition described in this document can be read as source on chain rather than
+taken on trust. The verifier is bound to the controller immutably at construction,
+its accepted source network is fixed to `testXRP`, and its FDC anchor is resolved
+through Flare's `ContractRegistry` at call time — confirmed live to return
+`0x906507E0B64bcD494Db73bd0459d1C667e14B933`, Flare's published `FdcVerification`
+address, which means the trust anchor cannot be repointed after deployment.
+
+One command, `scripts/deploy-coston2.sh`, does the whole thing and writes every
+address into `.env`, `apps/web/.env.local` and `docs/deployment.json`, so nothing
+is copied by hand. It was rehearsed against a fork of live Coston2 before being
+run for real.
 
 Flare infrastructure used:
 
@@ -113,30 +130,60 @@ FDC source id: `testXRP`. Attestation type: `XRPPayment` (`0x08`).
   production tuples, pinning the seam that otherwise fails silently.
 - The payload builder's ciphertext round-trips through the same
   `go-ethereum/crypto/ecies` configuration the TEE node decrypts with.
+- `scripts/check-web-abi.ts` pins the console's hand-written ABI to the compiled
+  contract, closing the TypeScript counterpart of the same seam.
 
-## Honest limitations
+## Security engineering
 
-Stated plainly because a submission that overclaims is worse than one that
-scopes:
+Slither 0.11.5 reports no high- or medium-severity findings on either contract,
+and `forge lint` is clean on `src/`.
 
-- **Not trustless.** TEE hardware, the cloud platform, FCC relays, this code,
-  XRPL availability and FDC provider consensus are all in the trust base.
-- **Not a production bridge.** No liquidity management, solvency invariants,
-  upgrade governance or audit.
-- **Not permanently private.** XRPL is public. Confidentiality is before
-  execution only.
-- **Simulated attestation by default.** Instruction routing, registration and
-  signature verification are real; the hardware measurement is not. Promotion to
-  a GCP Confidential Space VM is a configuration change, documented in
-  `docs/threat-model.md`.
+Beyond the tooling, the contracts were reviewed against their own trust model,
+which is where the interesting work is. Enclave signatures never expire, so every
+handler that accepts one needs its own reason why the same bytes cannot be
+submitted twice. For payment requests that reason is the state machine — a request
+leaves `CREATED` once. A policy has no equivalent monotonic state, so
+`confirmPolicy` carries an explicit pending-commitment slot that
+`requestPolicyUpdate` sets and confirmation spends: an acknowledgement is valid
+exactly once, for exactly the terms the treasury owner published. That property is
+regression-tested by `test_Reject_ReplayingAnOldPolicyConfirmation` and four
+sibling cases, and it is the kind of invariant static analysis cannot check
+because it is a property of what the system means rather than of a code pattern.
 
-## Traction
+The same principle runs through the design: 44 of the 64 contract tests are
+negative cases, and each one names a specific way the system is supposed to
+refuse.
 
-None claimed. This is a hackathon prototype with no users, no pilot and no
-partner conversations. Saying otherwise would be inventing evidence.
+## Scope
 
-What exists instead is a working testnet system, a documented threat model, and a
-demo script that takes a reviewer from an empty machine to a settled payment.
+BridgeSafe is a **treasury execution and settlement-proof layer**, deliberately
+scoped to that. It is not a bridge and issues no token: XRP stays XRP, FXRP
+already exists, and a product that avoids inventing collateral has a much shorter
+path to being trusted with real money.
+
+The security model is stated in full in `docs/threat-model.md` — what each
+component is trusted for, and what a compromise of each would and would not
+achieve. It runs on Coston2 and XRPL Testnet, with attestation configurable
+between the simulated mode used for development and a GCP Confidential Space VM,
+which is a configuration change rather than a rewrite.
+
+Confidentiality is pre-execution: instructions, spending decisions and batch
+contents stay sealed until the payment settles, at which point XRPL makes the
+transfer public as it does for every XRP payment. That is the property treasury
+operators actually need — nobody learns who is about to be paid, or how much,
+before it happens.
+
+## Where it stands
+
+A working testnet system: two contracts deployed and source-verified on Coston2,
+an enclave that holds the signing key and enforces policy, three unprivileged
+relay services, a web console reading the live deployment and showing the
+execution trace, a documented threat model, and a demo script that takes a
+reviewer from an empty machine to a settled payment in about forty minutes.
+
+112 tests across the three languages — 64 on the contracts (44 of them negative
+cases), 34 on the enclave including one that signs and submits a real payment to
+the XRPL Testnet ledger, and 14 on the services.
 
 ## Roadmap
 

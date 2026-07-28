@@ -12,8 +12,15 @@ Built for **Flare Summer Signal**, targeting both bounties:
 | **Confidential Compute Apps** | A Flare Compute Extension holds the treasury's XRPL key, decrypts payment instructions inside the TEE, enforces spending policy there, and signs a canonical XRPL transaction. The key never leaves the enclave. |
 | **Interoperable Asset Products** | A closed loop across two chains: Flare authorizes, XRPL executes, FDC proves settlement back on Flare. XRP becomes controllable from an EVM contract without a wrapped token or a new bridge. |
 
-> **Testnet only.** Coston2 + XRPL Testnet. No real value moves anywhere in this
-> repository. See [SECURITY.md](SECURITY.md) before running anything.
+> Runs on **Coston2 + XRPL Testnet**. See [SECURITY.md](SECURITY.md) before
+> running the stack — step 4 of the demo publishes a port to the internet.
+
+**Live on Coston2**, both source-verified:
+
+| Contract | Address |
+|---|---|
+| `BridgeSafeController` | [`0x32176FCA…f48b752`](https://coston2-explorer.flare.network/address/0x32176FCA80690938194F30844501ea24Cf48b752) |
+| `BridgeSafeFdcVerifier` | [`0x0B1B4371…fd5b1D8`](https://coston2-explorer.flare.network/address/0x0B1B437183571ba99a5A27E1Ac980CA2ffd5b1D8) |
 
 ---
 
@@ -40,7 +47,9 @@ later.
    authorization revealing only the amount and a hash of the destination — enough
    for the contract to reserve budget.
 4. The enclave signs a canonical XRPL `Payment` carrying a per-request memo.
-5. A relayer — which holds no key — puts the signed blob on the ledger.
+5. A relay — which holds no key and can only carry decisions the enclave already
+   signed — brings each result back on chain, and puts the signed blob on the
+   ledger.
 6. The **Flare Data Connector** attests the XRPL transaction. The contract checks
    source account, destination, exact amount, memo and success status, and that
    this transaction id has never settled another request. Only then: `SETTLED`.
@@ -89,7 +98,7 @@ concurrent requests both get signed against the same remaining allowance.
 
 ## Verified end to end
 
-Not "should work" — these were run:
+Every claim below is something that was run, not something that should work:
 
 - **The XRPL codec against the real ledger.** `TestLive_PaymentIsAcceptedByTheLedger`
   generates a key the way the enclave does, funds it from the testnet faucet,
@@ -106,11 +115,15 @@ Not "should work" — these were run:
   correctly-signed result that the contract simply refuses.
 - **ECIES matches the enclave.** The payload builder's output is decrypted with
   the same `go-ethereum/crypto/ecies` configuration the TEE node uses.
+- **The console's ABI matches the deployed shape.** `scripts/check-web-abi.ts`
+  compares every fragment `apps/web` declares against the compiled contract. This
+  seam is silent in the worst way — change a struct and the UI still compiles,
+  still type-checks, then throws the first time anyone opens it.
 
 ```
-contracts   58 tests   (lifecycle, 30+ negative cases, 6 cross-language)
-extension   26 tests   (+ 1 live ledger test behind -tags live)
-services     4 tests   (real FDC response parsing)
+contracts   64 tests   (lifecycle, 44 negative cases, 6 cross-language)
+extension   34 tests   (+ 1 live ledger test behind -tags live)
+services    14 tests   (FDC response parsing, enclave result transport, event routing)
 ```
 
 ---
@@ -123,12 +136,14 @@ contracts/     BridgeSafeController.sol   treasury, request state machine, FCC I
 extension/     Go Flare Compute Extension — policy engine + XRPL signer
                internal/xrpl/             restricted XRPL codec (Payment only)
                cmd/payload-builder/       loopback ECIES sealing for the UI
-services/      broadcaster/               submits signed blobs, holds no key
+services/      result-relay/              carries signed enclave results on chain
+               broadcaster/               submits signed blobs, holds no key
                fdc-worker/                drives the FDC attestation round trip
 infra/         self-hosted C-chain indexer, so the stack needs nothing from Flare support
 apps/web/      console with the execution trace
 docs/          architecture, threat model, demo script, submission notes
 scripts/       preflight, key generation, tunnel, deploy, secret and binding checks
+               check-web-abi.ts           pins the console's ABI to the compiled contract
 ```
 
 ## Running it
@@ -154,10 +169,10 @@ all of `extension/go/internal` and `extension/go/cmd` is new work. See
 [docs/submission.md](docs/submission.md) for the line-by-line split between what
 was written, what was forked, and what was reused unchanged.
 
-The honest summary: `extension/` began as a fork of Flare's `fce-sign` example,
-kept for its deployment and TEE-registration tooling, and its handlers were
-replaced entirely. Contract interfaces for the TEE registries are reproduced from
-Flare's published examples, attributed in the source.
+In short: `extension/` began as a fork of Flare's `fce-sign` example, kept for its
+deployment and TEE-registration tooling, with its handlers replaced entirely.
+Contract interfaces for the TEE registries are reproduced from Flare's published
+examples, attributed in the source.
 
 ## Roadmap
 

@@ -1,0 +1,16 @@
+{
+  "network": "coston2",
+  "chainId": 114,
+  "deployedAt": "2026-07-28T13:45:05Z",
+  "contracts": {
+    "BridgeSafeController": "0x32176FCA80690938194F30844501ea24Cf48b752",
+    "BridgeSafeFdcVerifier": "0x0B1B437183571ba99a5A27E1Ac980CA2ffd5b1D8"
+  },
+  "dependencies": {
+    "FlareTeeManager": "0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE",
+    "FdcHub": "0x48aC463d7975828989331F4De43341627b9c5f1D",
+    "FdcVerification": "resolved via ContractRegistry at call time",
+    "Relay": "0xa10B672D1c62e5457b17af63d4302add6A99d7dE"
+  },
+  "fdcSourceId": "testXRP"
+}

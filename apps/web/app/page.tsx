@@ -415,7 +415,7 @@ export default function Console() {
       </div>
 
       <footer>
-        Testnet prototype — no real value moves.{" "}
+        Coston2 · XRPL Testnet.{" "}
         {CONTROLLER_ADDRESS && (
           <>
             Controller{" "}
